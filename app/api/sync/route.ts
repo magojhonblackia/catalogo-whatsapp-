@@ -16,6 +16,10 @@ const BUSINESS_ID = process.env.BUSINESS_ID!;
 
 export async function POST() {
   try {
+    console.log("[sync] INICIO — BUSINESS_ID:", BUSINESS_ID);
+    console.log("[sync] TABLE:", TABLE);
+    console.log("[sync] BASE_ID:", process.env.AIRTABLE_BASE_ID);
+
     // 1. Leer repuestos desde Supabase
     const { data: products, error } = await supabase
       .from("supplier_products")
@@ -24,11 +28,14 @@ export async function POST() {
       .order("createdAt", { ascending: false });
 
     if (error) throw new Error(`Supabase: ${error.message}`);
+    console.log("[sync] Supabase OK — productos encontrados:", products?.length ?? 0);
+
     if (!products || products.length === 0) {
       return NextResponse.json({ synced: 0, message: "No hay repuestos para sincronizar." });
     }
 
-    // 2. Leer registros existentes en Airtable (por supplier_id para evitar duplicados)
+    // 2. Leer registros existentes en Airtable
+    console.log("[sync] Leyendo Airtable...");
     const existingRecords: Record<string, string> = {};
     await base(TABLE)
       .select({ fields: ["supplier_id"] })
@@ -39,6 +46,7 @@ export async function POST() {
         });
         next();
       });
+    console.log("[sync] Airtable existentes:", Object.keys(existingRecords).length);
 
     // 3. Separar en creates y updates
     const toCreate: Airtable.FieldSet[] = [];
@@ -65,11 +73,13 @@ export async function POST() {
         toCreate.push(fields);
       }
     }
+    console.log("[sync] A crear:", toCreate.length, "— A actualizar:", toUpdate.length);
 
-    // 4. Crear en lotes de 10 (límite Airtable)
+    // 4. Crear en lotes de 10
     let created = 0;
     for (let i = 0; i < toCreate.length; i += 10) {
       const batch = toCreate.slice(i, i + 10).map((fields) => ({ fields }));
+      console.log("[sync] Creando lote", i / 10 + 1, "— registros:", batch.length);
       await base(TABLE).create(batch);
       created += batch.length;
     }
@@ -78,10 +88,12 @@ export async function POST() {
     let updated = 0;
     for (let i = 0; i < toUpdate.length; i += 10) {
       const batch = toUpdate.slice(i, i + 10).map(({ id, fields }) => ({ id, fields }));
+      console.log("[sync] Actualizando lote", i / 10 + 1, "— registros:", batch.length);
       await base(TABLE).update(batch);
       updated += batch.length;
     }
 
+    console.log("[sync] COMPLETO — creados:", created, "actualizados:", updated);
     return NextResponse.json({
       synced: created + updated,
       created,
@@ -92,7 +104,7 @@ export async function POST() {
     const message = err instanceof Error ? err.message : "Error desconocido";
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const detail = (err as any)?.error ?? (err as any)?.statusCode ?? null;
-    console.error("[sync] error:", message, detail);
+    console.error("[sync] ERROR:", message, JSON.stringify(detail));
     return NextResponse.json({ error: message, detail }, { status: 500 });
   }
 }
