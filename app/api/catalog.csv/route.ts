@@ -52,8 +52,10 @@ export async function GET() {
     });
   }
 
-  const rows = products.map((p) => {
-    const price = p.salePrice ?? p.price ?? 0;
+  const rows = products
+    .filter((p) => p.salePrice != null && p.salePrice > 0)
+    .map((p) => {
+    const price = p.salePrice;
     const condition = p.isNew ? "new" : "used";
     const description = p.description
       ? p.description
