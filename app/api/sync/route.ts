@@ -90,6 +90,9 @@ export async function POST() {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error desconocido";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const detail = (err as any)?.error ?? (err as any)?.statusCode ?? null;
+    console.error("[sync] error:", message, detail);
+    return NextResponse.json({ error: message, detail }, { status: 500 });
   }
 }
