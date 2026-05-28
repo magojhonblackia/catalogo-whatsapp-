@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type SyncResult = {
   synced?: number;
@@ -14,6 +14,18 @@ type SyncResult = {
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
+  const [csvUrl, setCsvUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setCsvUrl(`${window.location.origin}/api/catalog.csv`);
+  }, []);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(csvUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   async function handleSync() {
     setLoading(true);
@@ -100,9 +112,30 @@ export default function Home() {
           </div>
         )}
 
-        <p className="text-center text-xs text-gray-400 mt-6">
-          Campos: Nombre · Marca · Modelo · Categoría · Precio · Calidad
-        </p>
+        {/* CSV URL para Meta */}
+        <div className="mt-6 bg-gray-50 rounded-xl p-4 border border-gray-200">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            URL del catálogo para Meta / WhatsApp
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="text-xs text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2 flex-1 truncate">
+              {csvUrl}
+            </code>
+            <button
+              onClick={handleCopy}
+              className="shrink-0 text-xs px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+            >
+              {copied ? "✓" : "Copiar"}
+            </button>
+          </div>
+          <a
+            href="/api/catalog.csv"
+            target="_blank"
+            className="text-xs text-indigo-500 hover:underline mt-2 inline-block"
+          >
+            Ver CSV →
+          </a>
+        </div>
       </div>
     </main>
   );
