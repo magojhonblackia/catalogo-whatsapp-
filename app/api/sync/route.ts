@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import Airtable from "airtable";
 import { NextResponse } from "next/server";
 
 const supabase = createClient(
@@ -7,18 +6,64 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
-  process.env.AIRTABLE_BASE_ID!
-);
-
-const TABLE = process.env.AIRTABLE_TABLE_NAME!;
+const AIRTABLE_TOKEN = process.env.AIRTABLE_API_KEY!;
+const BASE_ID = process.env.AIRTABLE_BASE_ID!;
+const TABLE = encodeURIComponent(process.env.AIRTABLE_TABLE_NAME!);
 const BUSINESS_ID = process.env.BUSINESS_ID!;
+const AT_BASE = `https://api.airtable.com/v0/${BASE_ID}/${TABLE}`;
+const AT_HEADERS = {
+  Authorization: `Bearer ${AIRTABLE_TOKEN}`,
+  "Content-Type": "application/json",
+};
+
+type AirtableRecord = { id: string; fields: Record<string, unknown> };
+
+async function atGet(): Promise<AirtableRecord[]> {
+  const records: AirtableRecord[] = [];
+  let offset: string | undefined;
+  do {
+    const url = offset
+      ? `${AT_BASE}?fields%5B%5D=supplier_id&offset=${offset}`
+      : `${AT_BASE}?fields%5B%5D=supplier_id`;
+    const res = await fetch(url, { headers: AT_HEADERS });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Airtable GET ${res.status}: ${body}`);
+    }
+    const json = await res.json();
+    records.push(...json.records);
+    offset = json.offset;
+  } while (offset);
+  return records;
+}
+
+async function atCreate(batch: Record<string, unknown>[]) {
+  const res = await fetch(AT_BASE, {
+    method: "POST",
+    headers: AT_HEADERS,
+    body: JSON.stringify({ records: batch.map((fields) => ({ fields })) }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Airtable POST ${res.status}: ${body}`);
+  }
+}
+
+async function atUpdate(batch: { id: string; fields: Record<string, unknown> }[]) {
+  const res = await fetch(AT_BASE, {
+    method: "PATCH",
+    headers: AT_HEADERS,
+    body: JSON.stringify({ records: batch }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Airtable PATCH ${res.status}: ${body}`);
+  }
+}
 
 export async function POST() {
   try {
-    console.log("[sync] INICIO — BUSINESS_ID:", BUSINESS_ID);
-    console.log("[sync] TABLE:", TABLE);
-    console.log("[sync] BASE_ID:", process.env.AIRTABLE_BASE_ID);
+    console.log("[sync] INICIO — BUSINESS_ID:", BUSINESS_ID, "TABLE:", process.env.AIRTABLE_TABLE_NAME);
 
     // 1. Leer repuestos desde Supabase
     const { data: products, error } = await supabase
@@ -28,7 +73,7 @@ export async function POST() {
       .order("createdAt", { ascending: false });
 
     if (error) throw new Error(`Supabase: ${error.message}`);
-    console.log("[sync] Supabase OK — productos encontrados:", products?.length ?? 0);
+    console.log("[sync] Supabase OK — productos:", products?.length ?? 0);
 
     if (!products || products.length === 0) {
       return NextResponse.json({ synced: 0, message: "No hay repuestos para sincronizar." });
@@ -36,24 +81,20 @@ export async function POST() {
 
     // 2. Leer registros existentes en Airtable
     console.log("[sync] Leyendo Airtable...");
-    const existingRecords: Record<string, string> = {};
-    await base(TABLE)
-      .select({ fields: ["supplier_id"] })
-      .eachPage((records, next) => {
-        records.forEach((r) => {
-          const sid = r.get("supplier_id") as string;
-          if (sid) existingRecords[sid] = r.id;
-        });
-        next();
-      });
-    console.log("[sync] Airtable existentes:", Object.keys(existingRecords).length);
+    const existing = await atGet();
+    const existingMap: Record<string, string> = {};
+    for (const r of existing) {
+      const sid = r.fields["supplier_id"] as string;
+      if (sid) existingMap[sid] = r.id;
+    }
+    console.log("[sync] Airtable existentes:", Object.keys(existingMap).length);
 
     // 3. Separar en creates y updates
-    const toCreate: Airtable.FieldSet[] = [];
-    const toUpdate: { id: string; fields: Airtable.FieldSet }[] = [];
+    const toCreate: Record<string, unknown>[] = [];
+    const toUpdate: { id: string; fields: Record<string, unknown> }[] = [];
 
     for (const p of products) {
-      const fields: Airtable.FieldSet = {
+      const fields: Record<string, unknown> = {
         supplier_id: p.id,
         Nombre: p.name ?? "",
         Descripcion: p.description ?? "",
@@ -66,9 +107,8 @@ export async function POST() {
         EsNuevo: p.isNew ?? false,
         EnOficina: p.inOffice ?? false,
       };
-
-      if (existingRecords[p.id]) {
-        toUpdate.push({ id: existingRecords[p.id], fields });
+      if (existingMap[p.id]) {
+        toUpdate.push({ id: existingMap[p.id], fields });
       } else {
         toCreate.push(fields);
       }
@@ -78,33 +118,22 @@ export async function POST() {
     // 4. Crear en lotes de 10
     let created = 0;
     for (let i = 0; i < toCreate.length; i += 10) {
-      const batch = toCreate.slice(i, i + 10).map((fields) => ({ fields }));
-      console.log("[sync] Creando lote", i / 10 + 1, "— registros:", batch.length);
-      await base(TABLE).create(batch);
-      created += batch.length;
+      await atCreate(toCreate.slice(i, i + 10));
+      created += Math.min(10, toCreate.length - i);
     }
 
     // 5. Actualizar en lotes de 10
     let updated = 0;
     for (let i = 0; i < toUpdate.length; i += 10) {
-      const batch = toUpdate.slice(i, i + 10).map(({ id, fields }) => ({ id, fields }));
-      console.log("[sync] Actualizando lote", i / 10 + 1, "— registros:", batch.length);
-      await base(TABLE).update(batch);
-      updated += batch.length;
+      await atUpdate(toUpdate.slice(i, i + 10));
+      updated += Math.min(10, toUpdate.length - i);
     }
 
     console.log("[sync] COMPLETO — creados:", created, "actualizados:", updated);
-    return NextResponse.json({
-      synced: created + updated,
-      created,
-      updated,
-      total: products.length,
-    });
+    return NextResponse.json({ synced: created + updated, created, updated, total: products.length });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error desconocido";
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const detail = (err as any)?.error ?? (err as any)?.statusCode ?? null;
-    console.error("[sync] ERROR:", message, JSON.stringify(detail));
-    return NextResponse.json({ error: message, detail }, { status: 500 });
+    console.error("[sync] ERROR:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
