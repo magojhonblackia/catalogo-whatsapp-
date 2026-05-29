@@ -11,6 +11,7 @@ const BUSINESS_ID = process.env.BUSINESS_ID!;
 function stripHtml(value: string): string {
   return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
 }
+
 const META_TOKEN = process.env.META_ACCESS_TOKEN!;
 const CATALOG_ID = process.env.META_CATALOG_ID!;
 const GRAPH_URL = `https://graph.facebook.com/v19.0/${CATALOG_ID}/product_sets`;
@@ -20,9 +21,31 @@ const AT_HEADERS = {
   "Content-Type": "application/json",
 };
 
+// Groups models by series: "iphone 11 pro" and "iphone 11 pro max" belong to series "iphone 11"
+function groupModelsBySeries(models: string[]): Map<string, string[]> {
+  const sorted = [...models].sort((a, b) => a.length - b.length);
+  const seriesMap = new Map<string, string[]>();
+
+  for (const model of sorted) {
+    let foundSeries = false;
+    for (const [base] of seriesMap) {
+      if (model === base || model.startsWith(base + " ")) {
+        seriesMap.get(base)!.push(model);
+        foundSeries = true;
+        break;
+      }
+    }
+    if (!foundSeries) {
+      seriesMap.set(model, [model]);
+    }
+  }
+
+  return seriesMap;
+}
+
 async function getAllCollectionIds(): Promise<{ id: string; name: string }[]> {
   const results: { id: string; name: string }[] = [];
-  let url = `${GRAPH_URL}?fields=id,name&limit=100`;
+  let url: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
   while (url) {
     const res = await fetch(url, { headers: AT_HEADERS });
     const json = await res.json();
@@ -34,20 +57,32 @@ async function getAllCollectionIds(): Promise<{ id: string; name: string }[]> {
 }
 
 async function getExistingCollections(): Promise<Record<string, string>> {
-  const res = await fetch(`${GRAPH_URL}?fields=id,name&limit=100`, { headers: AT_HEADERS });
-  const json = await res.json();
-  if (!res.ok) throw new Error(`Meta GET collections: ${JSON.stringify(json.error)}`);
+  const results: { id: string; name: string }[] = [];
+  let url: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
+  while (url) {
+    const res = await fetch(url, { headers: AT_HEADERS });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`Meta GET collections: ${JSON.stringify(json.error)}`);
+    results.push(...(json.data ?? []));
+    url = json.paging?.next ?? null;
+  }
   const map: Record<string, string> = {};
-  for (const c of json.data ?? []) {
+  for (const c of results) {
     map[c.name.toLowerCase()] = c.id;
   }
   return map;
 }
 
-async function createCollection(name: string, brand: string, model: string): Promise<"created" | "duplicate" | "error"> {
+async function createCollection(
+  name: string,
+  brand: string,
+  models: string[]
+): Promise<"created" | "duplicate" | "error"> {
   const filter = JSON.stringify({
-    brand: { i_contains: brand.trim() },
-    custom_label_0: { eq: model.trim() },
+    and: [
+      { brand: { eq: brand.trim() } },
+      { or: models.map((m) => ({ custom_label_0: { eq: m.trim() } })) },
+    ],
   });
   console.log(`[collections] Creando "${name}" con filtro:`, filter);
   const res = await fetch(GRAPH_URL, {
@@ -76,39 +111,53 @@ export async function POST() {
 
     if (error) throw new Error(`Supabase: ${error.message}`);
 
-    // Deduplica por brand+model
-    const seen = new Set<string>();
-    const pairs: { brand: string; model: string; name: string }[] = [];
+    // Deduplica por brand+model (normalizado a minúsculas para comparación)
+    const brandModels = new Map<string, { brandRaw: string; models: Set<string> }>();
     for (const p of data ?? []) {
       const brand = stripHtml(p.brand ?? "").trim();
       const model = stripHtml(p.model ?? "").trim();
       if (!brand || !model) continue;
-      const key = `${brand}__${model}`.toLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        pairs.push({ brand, model, name: `${brand} ${model}` });
+      const brandKey = brand.toLowerCase();
+      if (!brandModels.has(brandKey)) {
+        brandModels.set(brandKey, { brandRaw: brand, models: new Set() });
+      }
+      brandModels.get(brandKey)!.models.add(model.toLowerCase());
+    }
+
+    console.log("[collections] Marcas encontradas:", brandModels.size);
+
+    // 2. Agrupar modelos por serie dentro de cada marca
+    type CollectionDef = { name: string; brand: string; models: string[] };
+    const collections: CollectionDef[] = [];
+
+    for (const [, { brandRaw, models }] of brandModels) {
+      const seriesMap = groupModelsBySeries([...models]);
+      for (const [seriesBase, seriesModels] of seriesMap) {
+        const name = `${brandRaw} ${seriesBase}`;
+        collections.push({ name, brand: brandRaw, models: seriesModels });
       }
     }
-    console.log("[collections] Modelos encontrados:", pairs.length);
 
-    // 2. Leer colecciones existentes en Meta
+    console.log("[collections] Colecciones a crear:", collections.length);
+
+    // 3. Leer colecciones existentes en Meta
     const existing = await getExistingCollections();
     console.log("[collections] Colecciones existentes:", Object.keys(existing).length);
 
-    // 3. Crear todas, manejar duplicados sin fallar
+    // 4. Crear las que faltan
     const created: string[] = [];
     const skipped: string[] = [];
     const failed: string[] = [];
 
-    for (const { brand, model, name } of pairs) {
+    for (const { name, brand, models } of collections) {
       if (existing[name.toLowerCase()]) {
         skipped.push(name);
         continue;
       }
-      const result = await createCollection(name, brand, model);
+      const result = await createCollection(name, brand, models);
       if (result === "created") {
         created.push(name);
-        console.log("[collections] Creada:", name);
+        console.log("[collections] Creada:", name, "| modelos:", models.join(", "));
       } else if (result === "duplicate") {
         skipped.push(name);
       } else {
@@ -117,7 +166,7 @@ export async function POST() {
     }
 
     return NextResponse.json({
-      total: pairs.length,
+      total: collections.length,
       created,
       skipped,
       failed,
