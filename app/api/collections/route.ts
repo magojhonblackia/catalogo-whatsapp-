@@ -94,7 +94,7 @@ export async function POST() {
       const filter = JSON.stringify({ brand: { eq: brandRaw.trim() } });
       const result = await createSet(brandRaw, filter);
 
-      if (result === "created" || (typeof result === "object" && result.id)) {
+      if (typeof result === "object" && result.id) {
         created.push(brandRaw);
         console.log("[collections] Creada:", brandRaw);
       } else if (result === "duplicate") {
