@@ -34,14 +34,16 @@ async function getExistingCollections(): Promise<Record<string, string>> {
 async function createCollection(name: string, brand: string, model: string): Promise<"created" | "duplicate" | "error"> {
   const filter = JSON.stringify({
     brand: { i_contains: brand.trim() },
-    custom_label_0: { i_contains: model.trim() },
+    custom_label_0: { eq: model.trim() },
   });
+  console.log(`[collections] Creando "${name}" con filtro:`, filter);
   const res = await fetch(GRAPH_URL, {
     method: "POST",
     headers: AT_HEADERS,
     body: JSON.stringify({ name: name.trim(), filter }),
   });
   const json = await res.json();
+  console.log(`[collections] Respuesta Meta para "${name}":`, JSON.stringify(json));
   if (res.ok) return "created";
   if (json.error?.error_subcode === 1798073) return "duplicate";
   console.error(`[collections] Error creando "${name}":`, JSON.stringify(json.error));
