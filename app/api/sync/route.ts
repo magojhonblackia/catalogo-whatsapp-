@@ -73,7 +73,7 @@ export async function POST() {
     // 1. Leer repuestos desde Supabase
     const { data: products, error } = await supabase
       .from("supplier_products")
-      .select("id, name, description, price, salePrice, quality, brand, category, model, isNew, inOffice, createdAt")
+      .select("id, name, description, whatsappDesc, price, salePrice, quality, brand, category, model, isNew, inOffice, imageUrl, createdAt")
       .eq("businessId", BUSINESS_ID)
       .order("createdAt", { ascending: false });
 
@@ -111,6 +111,8 @@ export async function POST() {
         Modelo: stripHtml(p.model),
         EsNuevo: p.isNew ?? false,
         EnOficina: p.inOffice ?? false,
+        ImagenURL: p.imageUrl ?? "",
+        DescWhatsApp: p.whatsappDesc ?? "",
       };
       if (existingMap[p.id]) {
         toUpdate.push({ id: existingMap[p.id], fields });
