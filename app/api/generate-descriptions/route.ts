@@ -18,6 +18,13 @@ function formatPrice(price: number): string {
   return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(price);
 }
 
+function getWarranty(name: string, category: string): string {
+  const text = `${name} ${category}`.toLowerCase();
+  if (text.includes("bater")) return "3 meses de garantía";
+  if (text.includes("display") || text.includes("pantalla") || text.includes("visor") || text.includes("reglassing")) return "1 mes de garantía";
+  return "1 mes de garantía";
+}
+
 async function generateDesc(product: {
   name: string;
   brand: string;
@@ -26,6 +33,8 @@ async function generateDesc(product: {
   quality: string;
   salePrice: number;
 }): Promise<string> {
+  const warranty = getWarranty(product.name, product.category);
+
   const prompt = `Eres un experto en redacción para tiendas de reparación de celulares en Colombia.
 Genera la descripción de este repuesto en formato WhatsApp. Sigue EXACTAMENTE esta estructura:
 
@@ -37,6 +46,7 @@ Genera la descripción de este repuesto en formato WhatsApp. Sigue EXACTAMENTE e
 • [Beneficio clave 2]
 • [Beneficio clave 3]
 • Instalación disponible
+• ${warranty}
 
 💰 ${formatPrice(product.salePrice)}
 
@@ -51,6 +61,8 @@ Reglas:
 - Usa tuteo informal (tú, tu equipo)
 - El emoji del título debe corresponder al tipo de repuesto (🔋 batería, 📱 pantalla/display, ⚡ carga/flex, 📷 cámara, 🔊 bocina, etc.)
 - Los bullets deben ser cortos y específicos del producto
+- La garantía ya está incluida en los bullets, NO la repitas en otro lugar
+- Si el producto es una batería y la calidad NO es "Original", NO menciones "100% de salud" ni porcentajes de salud en los ajustes — eso solo aplica para baterías originales
 - No inventes características que no correspondan al repuesto
 - Responde SOLO con el texto del mensaje, sin explicaciones`;
 
