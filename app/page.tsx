@@ -17,6 +17,7 @@ export default function Home() {
   const [result, setResult] = useState<SyncResult | null>(null);
   const [loadingCol, setLoadingCol] = useState(false);
   const [resultCol, setResultCol] = useState<SyncResult | null>(null);
+  const [loadingDel, setLoadingDel] = useState(false);
   const [loadingDesc, setLoadingDesc] = useState(false);
   const [resultDesc, setResultDesc] = useState<SyncResult | null>(null);
   const [csvUrl, setCsvUrl] = useState("");
@@ -30,6 +31,20 @@ export default function Home() {
     navigator.clipboard.writeText(csvUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleDeleteCollections() {
+    if (!confirm("¿Eliminar todos los conjuntos de Meta?")) return;
+    setLoadingDel(true);
+    try {
+      const res = await fetch("/api/collections", { method: "DELETE" });
+      const data = await res.json();
+      setResultCol(data);
+    } catch {
+      setResultCol({ error: "No se pudo eliminar." });
+    } finally {
+      setLoadingDel(false);
+    }
   }
 
   async function handleCollections() {
@@ -213,9 +228,18 @@ export default function Home() {
 
         {/* Colecciones Meta */}
         <div className="mt-4 border-t border-gray-100 pt-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            Colecciones por marca en Meta
-          </p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              Colecciones por modelo en Meta
+            </p>
+            <button
+              onClick={handleDeleteCollections}
+              disabled={loadingDel || loadingCol}
+              className="text-xs px-3 py-1 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+            >
+              {loadingDel ? "Eliminando..." : "Eliminar todas"}
+            </button>
+          </div>
           <button
             onClick={handleCollections}
             disabled={loadingCol}

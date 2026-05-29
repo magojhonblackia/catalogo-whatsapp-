@@ -20,6 +20,19 @@ const AT_HEADERS = {
   "Content-Type": "application/json",
 };
 
+async function getAllCollectionIds(): Promise<{ id: string; name: string }[]> {
+  const results: { id: string; name: string }[] = [];
+  let url = `${GRAPH_URL}?fields=id,name&limit=100`;
+  while (url) {
+    const res = await fetch(url, { headers: AT_HEADERS });
+    const json = await res.json();
+    if (!res.ok) throw new Error(`Meta GET: ${JSON.stringify(json.error)}`);
+    results.push(...(json.data ?? []));
+    url = json.paging?.next ?? null;
+  }
+  return results;
+}
+
 async function getExistingCollections(): Promise<Record<string, string>> {
   const res = await fetch(`${GRAPH_URL}?fields=id,name&limit=100`, { headers: AT_HEADERS });
   const json = await res.json();
@@ -113,6 +126,41 @@ export async function POST() {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error desconocido";
     console.error("[collections] ERROR:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const collections = await getAllCollectionIds();
+    console.log("[collections] Eliminando", collections.length, "conjuntos...");
+
+    let deleted = 0;
+    const failed: string[] = [];
+
+    for (const { id, name } of collections) {
+      const res = await fetch(`https://graph.facebook.com/v19.0/${id}`, {
+        method: "DELETE",
+        headers: AT_HEADERS,
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        deleted++;
+        console.log("[collections] Eliminado:", name);
+      } else {
+        failed.push(name);
+        console.error("[collections] No se pudo eliminar:", name, JSON.stringify(json));
+      }
+    }
+
+    return NextResponse.json({
+      deleted,
+      failed,
+      message: `${deleted} conjuntos eliminados${failed.length ? `. No se pudieron eliminar: ${failed.join(", ")}` : ""}`,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("[collections] DELETE ERROR:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
