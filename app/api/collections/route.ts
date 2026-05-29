@@ -39,9 +39,9 @@ function groupModelsBySeries(models: string[]): Map<string, string[]> {
   return seriesMap;
 }
 
-async function fetchSetsFromUrl(startUrl: string): Promise<{ id: string; name: string }[]> {
+async function fetchAllSets(): Promise<{ id: string; name: string }[]> {
   const results: { id: string; name: string }[] = [];
-  let nextUrl: string | null = startUrl;
+  let nextUrl: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
   while (nextUrl) {
     const res: Response = await fetch(nextUrl, { headers: AT_HEADERS });
     const json = await res.json();
@@ -52,39 +52,25 @@ async function fetchSetsFromUrl(startUrl: string): Promise<{ id: string; name: s
   return results;
 }
 
-// Fetches top-level sets + all children of each top-level set
-async function fetchAllSets(): Promise<{ id: string; name: string }[]> {
-  const topLevel = await fetchSetsFromUrl(`${GRAPH_URL}?fields=id,name&limit=100`);
-  const all = [...topLevel];
-  for (const parent of topLevel) {
-    const children = await fetchSetsFromUrl(
-      `https://graph.facebook.com/v19.0/${parent.id}/product_sets?fields=id,name&limit=100`
-    );
-    all.push(...children);
-  }
-  return all;
-}
-
 async function createSet(
   name: string,
   filter: string,
   parentId?: string
-): Promise<{ id: string } | null> {
-  const endpoint = parentId
-    ? `https://graph.facebook.com/v19.0/${parentId}/product_sets`
-    : GRAPH_URL;
+): Promise<{ id: string } | "duplicate" | "error"> {
+  const body: Record<string, string> = { name: name.trim(), filter };
+  if (parentId) body.parent_id = parentId;
 
-  const res: Response = await fetch(endpoint, {
+  const res: Response = await fetch(GRAPH_URL, {
     method: "POST",
     headers: AT_HEADERS,
-    body: JSON.stringify({ name: name.trim(), filter }),
+    body: JSON.stringify(body),
   });
   const json = await res.json();
+  console.log(`[collections] Respuesta para "${name}":`, JSON.stringify(json));
   if (res.ok) return { id: json.id };
-  // duplicate — not an error
-  if (json.error?.error_subcode === 1798073) return null;
+  if (json.error?.error_subcode === 1798073) return "duplicate";
   console.error(`[collections] Error creando "${name}":`, JSON.stringify(json.error));
-  return null;
+  return "error";
 }
 
 export async function POST() {
@@ -134,14 +120,17 @@ export async function POST() {
       } else {
         const parentFilter = JSON.stringify({ brand: { eq: brandRaw.trim() } });
         const result = await createSet(brandRaw, parentFilter);
-        if (result) {
-          parentId = result.id;
-          createdParents.push(brandRaw);
-          console.log("[collections] Padre creado:", brandRaw, "id:", parentId);
-        } else {
+        if (result === "error") {
           failed.push(brandRaw);
           console.error("[collections] No se pudo crear padre:", brandRaw);
           continue;
+        } else if (result === "duplicate") {
+          skipped.push(brandRaw);
+          continue;
+        } else {
+          parentId = result.id;
+          createdParents.push(brandRaw);
+          console.log("[collections] Padre creado:", brandRaw, "id:", parentId);
         }
       }
 
@@ -160,11 +149,13 @@ export async function POST() {
           ],
         });
         const result = await createSet(childName, childFilter, parentId);
-        if (result) {
+        if (result === "error") {
+          failed.push(childName);
+        } else if (result === "duplicate") {
+          skipped.push(childName);
+        } else {
           createdChildren.push(childName);
           console.log("[collections] Hijo creado:", childName, "| modelos:", seriesModels.join(", "));
-        } else {
-          failed.push(childName);
         }
       }
     }
