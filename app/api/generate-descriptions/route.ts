@@ -9,30 +9,9 @@ const supabase = createClient(
 const BUSINESS_ID = process.env.BUSINESS_ID!;
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY!;
 
-const SITE_URL = process.env.SITE_URL ?? "https://jcreparaciones.com";
-
 function stripHtml(value: string | null | undefined): string {
   if (!value) return "";
   return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
-}
-
-function slug(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
-}
-
-function buildProductUrl(brand: string, model: string, category: string): string {
-  if (!brand || !model || !category) return "";
-  const modelSlug = slug(model);
-  const marcaParam = modelSlug.split("-")[0];
-  const servicioParam = `${slug(brand)}-${modelSlug}-${slug(category)}`;
-  return `${SITE_URL}/reparacion/${marcaParam}/${modelSlug}/${servicioParam}`;
 }
 
 function formatPrice(price: number): string {
@@ -116,7 +95,7 @@ export async function POST(req: Request) {
 
     let query = supabase
       .from("supplier_products")
-      .select("id, name, brand, model, category, quality, salePrice, price")
+      .select("id, name, brand, model, category, quality, salePrice, price, site_url")
       .eq("businessId", BUSINESS_ID)
       .eq("inOffice", true)
       .limit(20);
@@ -142,20 +121,16 @@ export async function POST(req: Request) {
 
     for (const p of products) {
       try {
-        const cleanBrand = stripHtml(p.brand);
-        const cleanModel = stripHtml(p.model);
-        const cleanCategory = stripHtml(p.category);
-
         const desc = await generateDesc({
           name: stripHtml(p.name),
-          brand: cleanBrand,
-          model: cleanModel,
-          category: cleanCategory,
+          brand: stripHtml(p.brand),
+          model: stripHtml(p.model),
+          category: stripHtml(p.category),
           quality: stripHtml(p.quality),
           salePrice: p.salePrice ?? p.price ?? 0,
         });
 
-        const productUrl = buildProductUrl(cleanBrand, cleanModel, cleanCategory);
+        const productUrl = p.site_url ?? "";
         const fullDesc = productUrl
           ? `${desc}\n\n🔗 Ver más información:\n${productUrl}`
           : desc;

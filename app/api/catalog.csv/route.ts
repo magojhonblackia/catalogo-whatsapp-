@@ -8,7 +8,6 @@ const supabase = createClient(
 
 const BUSINESS_ID = process.env.BUSINESS_ID!;
 
-// Meta requiere estos campos en el CSV
 const CSV_HEADERS = [
   "id",
   "title",
@@ -23,30 +22,8 @@ const CSV_HEADERS = [
   "custom_label_0",
 ];
 
-const SITE_URL = process.env.SITE_URL ?? "https://jcreparaciones.com";
-
 function stripHtml(value: string): string {
   return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
-}
-
-// Replicates the slug() used by jcreparaciones.com to build SSR URLs
-function slug(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")   // strip accents
-    .replace(/[^a-z0-9\s-]/g, "")      // keep only alphanumeric + spaces + hyphens
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
-}
-
-function buildProductUrl(brand: string, model: string, category: string): string {
-  if (!brand || !model || !category) return "";
-  const modelSlug = slug(model);
-  const marcaParam = modelSlug.split("-")[0]; // e.g. "iphone" from "iphone-15-pro"
-  const servicioParam = `${slug(brand)}-${modelSlug}-${slug(category)}`;
-  return `${SITE_URL}/reparacion/${marcaParam}/${modelSlug}/${servicioParam}`;
 }
 
 function escapeCSV(value: string | number | boolean | null | undefined): string {
@@ -61,7 +38,7 @@ function escapeCSV(value: string | number | boolean | null | undefined): string 
 export async function GET() {
   const { data: products, error } = await supabase
     .from("supplier_products")
-    .select("id, name, description, whatsappDesc, price, salePrice, quality, brand, category, model, isNew, inOffice, imageUrl")
+    .select("id, name, description, whatsappDesc, price, salePrice, quality, brand, category, model, isNew, inOffice, imageUrl, site_url")
     .eq("businessId", BUSINESS_ID)
     .eq("inOffice", true);
 
@@ -82,34 +59,32 @@ export async function GET() {
   const rows = products
     .filter((p) => p.salePrice != null && p.salePrice > 0)
     .map((p) => {
-    const price = p.salePrice;
-    const condition = p.isNew ? "new" : "used";
-    const cleanName = stripHtml(p.name ?? "");
-    const cleanBrand = stripHtml(p.brand ?? "");
-    const cleanModel = stripHtml(p.model ?? "");
-    const cleanCategory = stripHtml(p.category ?? "");
-    const description = p.whatsappDesc
-      ? p.whatsappDesc
-      : p.description
-      ? stripHtml(p.description)
-      : [cleanBrand, cleanModel, cleanCategory].filter(Boolean).join(" — ");
+      const price = p.salePrice;
+      const condition = p.isNew ? "new" : "used";
+      const cleanName = stripHtml(p.name ?? "");
+      const cleanBrand = stripHtml(p.brand ?? "");
+      const cleanModel = stripHtml(p.model ?? "");
+      const cleanCategory = stripHtml(p.category ?? "");
+      const description = p.whatsappDesc
+        ? p.whatsappDesc
+        : p.description
+        ? stripHtml(p.description)
+        : [cleanBrand, cleanModel, cleanCategory].filter(Boolean).join(" — ");
 
-    const productUrl = buildProductUrl(cleanBrand, cleanModel, cleanCategory);
-
-    return [
-      escapeCSV(p.id),
-      escapeCSV(cleanName),
-      escapeCSV(description || cleanName),
-      escapeCSV("in stock"),
-      escapeCSV(condition),
-      escapeCSV(`${price} COP`),
-      escapeCSV(productUrl),
-      escapeCSV(p.imageUrl ?? "https://placehold.co/800x800/e2e8f0/64748b?text=Repuesto"),
-      escapeCSV(cleanBrand),
-      escapeCSV(cleanCategory),
-      escapeCSV(cleanModel),   // custom_label_0 = modelo para filtrar conjuntos
-    ].join(",");
-  });
+      return [
+        escapeCSV(p.id),
+        escapeCSV(cleanName),
+        escapeCSV(description || cleanName),
+        escapeCSV("in stock"),
+        escapeCSV(condition),
+        escapeCSV(`${price} COP`),
+        escapeCSV(p.site_url ?? ""),
+        escapeCSV(p.imageUrl ?? "https://placehold.co/800x800/e2e8f0/64748b?text=Repuesto"),
+        escapeCSV(cleanBrand),
+        escapeCSV(cleanCategory),
+        escapeCSV(cleanModel),
+      ].join(",");
+    });
 
   const csv = [CSV_HEADERS.join(","), ...rows].join("\n");
 
