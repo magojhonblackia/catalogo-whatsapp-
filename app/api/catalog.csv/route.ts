@@ -35,7 +35,7 @@ function escapeCSV(value: string | number | boolean | null | undefined): string 
 export async function GET() {
   const { data: products, error } = await supabase
     .from("supplier_products")
-    .select("id, name, description, price, salePrice, quality, brand, category, model, isNew, inOffice, imageUrl")
+    .select("id, name, description, price, salePrice, quality, brand, category, model, isNew, inOffice")
     .eq("businessId", BUSINESS_ID)
     .eq("inOffice", true);
 
@@ -78,7 +78,7 @@ export async function GET() {
       escapeCSV(condition),
       escapeCSV(`${price} COP`),
       escapeCSV(""),
-      escapeCSV(p.imageUrl ?? ""),
+      escapeCSV(""),
       escapeCSV(p.brand ?? ""),
       escapeCSV(p.category ?? ""),
       escapeCSV(itemGroupId),
