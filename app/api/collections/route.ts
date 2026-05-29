@@ -25,7 +25,6 @@ const AT_HEADERS = {
 function groupModelsBySeries(models: string[]): Map<string, string[]> {
   const sorted = [...models].sort((a, b) => a.length - b.length);
   const seriesMap = new Map<string, string[]>();
-
   for (const model of sorted) {
     let foundSeries = false;
     for (const [base] of seriesMap) {
@@ -35,15 +34,12 @@ function groupModelsBySeries(models: string[]): Map<string, string[]> {
         break;
       }
     }
-    if (!foundSeries) {
-      seriesMap.set(model, [model]);
-    }
+    if (!foundSeries) seriesMap.set(model, [model]);
   }
-
   return seriesMap;
 }
 
-async function getAllCollectionIds(): Promise<{ id: string; name: string }[]> {
+async function fetchAllSets(): Promise<{ id: string; name: string }[]> {
   const results: { id: string; name: string }[] = [];
   let nextUrl: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
   while (nextUrl) {
@@ -56,51 +52,30 @@ async function getAllCollectionIds(): Promise<{ id: string; name: string }[]> {
   return results;
 }
 
-async function getExistingCollections(): Promise<Record<string, string>> {
-  const results: { id: string; name: string }[] = [];
-  let nextUrl: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
-  while (nextUrl) {
-    const res: Response = await fetch(nextUrl, { headers: AT_HEADERS });
-    const json = await res.json();
-    if (!res.ok) throw new Error(`Meta GET collections: ${JSON.stringify(json.error)}`);
-    results.push(...(json.data ?? []));
-    nextUrl = json.paging?.next ?? null;
-  }
-  const map: Record<string, string> = {};
-  for (const c of results) {
-    map[c.name.toLowerCase()] = c.id;
-  }
-  return map;
-}
-
-async function createCollection(
+async function createSet(
   name: string,
-  brand: string,
-  models: string[]
-): Promise<"created" | "duplicate" | "error"> {
-  const filter = JSON.stringify({
-    and: [
-      { brand: { eq: brand.trim() } },
-      { or: models.map((m) => ({ custom_label_0: { eq: m.trim() } })) },
-    ],
-  });
-  console.log(`[collections] Creando "${name}" con filtro:`, filter);
-  const res = await fetch(GRAPH_URL, {
+  filter: string,
+  parentId?: string
+): Promise<{ id: string } | null> {
+  const body: Record<string, string> = { name: name.trim(), filter };
+  if (parentId) body.parent_id = parentId;
+
+  const res: Response = await fetch(GRAPH_URL, {
     method: "POST",
     headers: AT_HEADERS,
-    body: JSON.stringify({ name: name.trim(), filter }),
+    body: JSON.stringify(body),
   });
   const json = await res.json();
-  console.log(`[collections] Respuesta Meta para "${name}":`, JSON.stringify(json));
-  if (res.ok) return "created";
-  if (json.error?.error_subcode === 1798073) return "duplicate";
+  if (res.ok) return { id: json.id };
+  // duplicate — not an error
+  if (json.error?.error_subcode === 1798073) return null;
   console.error(`[collections] Error creando "${name}":`, JSON.stringify(json.error));
-  return "error";
+  return null;
 }
 
 export async function POST() {
   try {
-    // 1. Leer combinaciones únicas marca+modelo desde Supabase
+    // 1. Leer marca+modelo únicos desde Supabase
     const { data, error } = await supabase
       .from("supplier_products")
       .select("brand, model")
@@ -111,66 +86,81 @@ export async function POST() {
 
     if (error) throw new Error(`Supabase: ${error.message}`);
 
-    // Deduplica por brand+model (normalizado a minúsculas para comparación)
-    const brandModels = new Map<string, { brandRaw: string; models: Set<string> }>();
+    // Agrupar modelos por marca
+    const brandMap = new Map<string, { brandRaw: string; models: Set<string> }>();
     for (const p of data ?? []) {
       const brand = stripHtml(p.brand ?? "").trim();
       const model = stripHtml(p.model ?? "").trim();
       if (!brand || !model) continue;
-      const brandKey = brand.toLowerCase();
-      if (!brandModels.has(brandKey)) {
-        brandModels.set(brandKey, { brandRaw: brand, models: new Set() });
-      }
-      brandModels.get(brandKey)!.models.add(model.toLowerCase());
+      const key = brand.toLowerCase();
+      if (!brandMap.has(key)) brandMap.set(key, { brandRaw: brand, models: new Set() });
+      brandMap.get(key)!.models.add(model.toLowerCase());
     }
 
-    console.log("[collections] Marcas encontradas:", brandModels.size);
+    console.log("[collections] Marcas:", brandMap.size);
 
-    // 2. Agrupar modelos por serie dentro de cada marca
-    type CollectionDef = { name: string; brand: string; models: string[] };
-    const collections: CollectionDef[] = [];
+    // 2. Leer conjuntos existentes en Meta (indexados por nombre en minúsculas)
+    const existing = await fetchAllSets();
+    const existingByName = new Map<string, string>();
+    for (const s of existing) existingByName.set(s.name.toLowerCase(), s.id);
 
-    for (const [, { brandRaw, models }] of brandModels) {
-      const seriesMap = groupModelsBySeries([...models]);
-      for (const [seriesBase, seriesModels] of seriesMap) {
-        const name = `${brandRaw} ${seriesBase}`;
-        collections.push({ name, brand: brandRaw, models: seriesModels });
-      }
-    }
+    console.log("[collections] Existentes en Meta:", existing.length);
 
-    console.log("[collections] Colecciones a crear:", collections.length);
-
-    // 3. Leer colecciones existentes en Meta
-    const existing = await getExistingCollections();
-    console.log("[collections] Colecciones existentes:", Object.keys(existing).length);
-
-    // 4. Crear las que faltan
-    const created: string[] = [];
+    const createdParents: string[] = [];
+    const createdChildren: string[] = [];
     const skipped: string[] = [];
     const failed: string[] = [];
 
-    for (const { name, brand, models } of collections) {
-      if (existing[name.toLowerCase()]) {
-        skipped.push(name);
-        continue;
-      }
-      const result = await createCollection(name, brand, models);
-      if (result === "created") {
-        created.push(name);
-        console.log("[collections] Creada:", name, "| modelos:", models.join(", "));
-      } else if (result === "duplicate") {
-        skipped.push(name);
+    // 3. Por cada marca: crear conjunto padre + conjuntos hijo por serie
+    for (const [, { brandRaw, models }] of brandMap) {
+      // --- Conjunto padre (marca) ---
+      let parentId = existingByName.get(brandRaw.toLowerCase());
+      if (parentId) {
+        skipped.push(brandRaw);
       } else {
-        failed.push(name);
+        const parentFilter = JSON.stringify({ brand: { eq: brandRaw.trim() } });
+        const result = await createSet(brandRaw, parentFilter);
+        if (result) {
+          parentId = result.id;
+          createdParents.push(brandRaw);
+          console.log("[collections] Padre creado:", brandRaw, "id:", parentId);
+        } else {
+          failed.push(brandRaw);
+          console.error("[collections] No se pudo crear padre:", brandRaw);
+          continue;
+        }
+      }
+
+      // --- Conjuntos hijo por serie ---
+      const seriesMap = groupModelsBySeries([...models]);
+      for (const [seriesBase, seriesModels] of seriesMap) {
+        const childName = `${brandRaw} ${seriesBase}`;
+        if (existingByName.has(childName.toLowerCase())) {
+          skipped.push(childName);
+          continue;
+        }
+        const childFilter = JSON.stringify({
+          and: [
+            { brand: { eq: brandRaw.trim() } },
+            { or: seriesModels.map((m) => ({ custom_label_0: { eq: m.trim() } })) },
+          ],
+        });
+        const result = await createSet(childName, childFilter, parentId);
+        if (result) {
+          createdChildren.push(childName);
+          console.log("[collections] Hijo creado:", childName, "| modelos:", seriesModels.join(", "));
+        } else {
+          failed.push(childName);
+        }
       }
     }
 
     return NextResponse.json({
-      total: collections.length,
-      created,
+      createdParents,
+      createdChildren,
       skipped,
       failed,
-      message: `${created.length} creadas, ${skipped.length} ya existían${failed.length ? `, ${failed.length} fallaron` : ""}.`,
+      message: `${createdParents.length} marcas nuevas, ${createdChildren.length} series nuevas, ${skipped.length} ya existían${failed.length ? `, ${failed.length} fallaron` : ""}.`,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error desconocido";
@@ -181,14 +171,14 @@ export async function POST() {
 
 export async function DELETE() {
   try {
-    const collections = await getAllCollectionIds();
+    const collections = await fetchAllSets();
     console.log("[collections] Eliminando", collections.length, "conjuntos...");
 
     let deleted = 0;
     const failed: string[] = [];
 
     for (const { id, name } of collections) {
-      const res = await fetch(`https://graph.facebook.com/v19.0/${id}`, {
+      const res: Response = await fetch(`https://graph.facebook.com/v19.0/${id}`, {
         method: "DELETE",
         headers: AT_HEADERS,
       });
