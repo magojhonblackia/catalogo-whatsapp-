@@ -27,16 +27,19 @@ async function getExistingCollections(): Promise<Record<string, string>> {
   return map;
 }
 
-async function createCollection(name: string): Promise<string> {
-  const filter = JSON.stringify({ brand: { i_contains: name } });
+async function createCollection(name: string): Promise<"created" | "duplicate" | "error"> {
+  const filter = JSON.stringify({ brand: { i_contains: name.trim() } });
   const res = await fetch(GRAPH_URL, {
     method: "POST",
     headers: AT_HEADERS,
-    body: JSON.stringify({ name, filter }),
+    body: JSON.stringify({ name: name.trim(), filter }),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(`Meta POST collection "${name}": ${JSON.stringify(json.error)}`);
-  return json.id;
+  if (res.ok) return "created";
+  // Error 1798073 = conjunto duplicado — ignorar
+  if (json.error?.error_subcode === 1798073) return "duplicate";
+  console.error(`[collections] Error creando "${name}":`, JSON.stringify(json.error));
+  return "error";
 }
 
 export async function POST() {
@@ -58,17 +61,25 @@ export async function POST() {
     const existing = await getExistingCollections();
     console.log("[collections] Colecciones existentes en Meta:", Object.keys(existing));
 
-    // 3. Crear solo las que no existen
+    // 3. Crear todas, manejar duplicados sin fallar
     const created: string[] = [];
     const skipped: string[] = [];
+    const failed: string[] = [];
 
     for (const brand of brands) {
-      if (existing[brand.toLowerCase()]) {
+      if (existing[brand.toLowerCase().trim()]) {
         skipped.push(brand);
-      } else {
-        await createCollection(brand);
+        continue;
+      }
+      const result = await createCollection(brand);
+      if (result === "created") {
         created.push(brand);
         console.log("[collections] Creada:", brand);
+      } else if (result === "duplicate") {
+        skipped.push(brand);
+        console.log("[collections] Duplicada (ignorada):", brand);
+      } else {
+        failed.push(brand);
       }
     }
 
@@ -76,7 +87,8 @@ export async function POST() {
       total: brands.length,
       created,
       skipped,
-      message: `${created.length} colecciones creadas, ${skipped.length} ya existían.`,
+      failed,
+      message: `${created.length} creadas, ${skipped.length} ya existían${failed.length ? `, ${failed.length} fallaron` : ""}.`,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error desconocido";
