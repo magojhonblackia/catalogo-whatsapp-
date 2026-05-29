@@ -39,9 +39,9 @@ function groupModelsBySeries(models: string[]): Map<string, string[]> {
   return seriesMap;
 }
 
-async function fetchAllSets(): Promise<{ id: string; name: string }[]> {
+async function fetchSetsFromUrl(startUrl: string): Promise<{ id: string; name: string }[]> {
   const results: { id: string; name: string }[] = [];
-  let nextUrl: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
+  let nextUrl: string | null = startUrl;
   while (nextUrl) {
     const res: Response = await fetch(nextUrl, { headers: AT_HEADERS });
     const json = await res.json();
@@ -52,18 +52,32 @@ async function fetchAllSets(): Promise<{ id: string; name: string }[]> {
   return results;
 }
 
+// Fetches top-level sets + all children of each top-level set
+async function fetchAllSets(): Promise<{ id: string; name: string }[]> {
+  const topLevel = await fetchSetsFromUrl(`${GRAPH_URL}?fields=id,name&limit=100`);
+  const all = [...topLevel];
+  for (const parent of topLevel) {
+    const children = await fetchSetsFromUrl(
+      `https://graph.facebook.com/v19.0/${parent.id}/product_sets?fields=id,name&limit=100`
+    );
+    all.push(...children);
+  }
+  return all;
+}
+
 async function createSet(
   name: string,
   filter: string,
   parentId?: string
 ): Promise<{ id: string } | null> {
-  const body: Record<string, string> = { name: name.trim(), filter };
-  if (parentId) body.parent_id = parentId;
+  const endpoint = parentId
+    ? `https://graph.facebook.com/v19.0/${parentId}/product_sets`
+    : GRAPH_URL;
 
-  const res: Response = await fetch(GRAPH_URL, {
+  const res: Response = await fetch(endpoint, {
     method: "POST",
     headers: AT_HEADERS,
-    body: JSON.stringify(body),
+    body: JSON.stringify({ name: name.trim(), filter }),
   });
   const json = await res.json();
   if (res.ok) return { id: json.id };
