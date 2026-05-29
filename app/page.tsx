@@ -46,17 +46,22 @@ export default function Home() {
     }
   }
 
+  const [regenOffset, setRegenOffset] = useState(0);
+
   async function handleDesc(regenerate = false) {
     setLoadingDesc(true);
-    setResultDesc(null);
+    if (!regenerate) setResultDesc(null);
+    const offset = regenerate ? regenOffset : 0;
     try {
       const res = await fetch("/api/generate-descriptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ regenerate }),
+        body: JSON.stringify({ regenerate, offset }),
       });
       const data = await res.json();
       setResultDesc(data);
+      if (regenerate && data.offset != null) setRegenOffset(data.offset);
+      if (!regenerate || data.pending === 0) setRegenOffset(0);
     } catch {
       setResultDesc({ error: "No se pudo conectar con el servidor." });
     } finally {

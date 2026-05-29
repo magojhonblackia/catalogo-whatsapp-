@@ -91,6 +91,8 @@ export async function POST(req: Request) {
     const regenerate = body.regenerate === true;
 
     // 1. Leer productos (sin desc o todos si regenerate=true)
+    const offset = body.offset ?? 0;
+
     let query = supabase
       .from("supplier_products")
       .select("id, name, brand, model, category, quality, salePrice, price")
@@ -98,7 +100,11 @@ export async function POST(req: Request) {
       .eq("inOffice", true)
       .limit(20);
 
-    if (!regenerate) query = query.is("whatsappDesc", null);
+    if (!regenerate) {
+      query = query.is("whatsappDesc", null);
+    } else {
+      query = query.range(offset, offset + 19);
+    }
 
     const { data: products, error } = await query;
 
@@ -138,22 +144,38 @@ export async function POST(req: Request) {
       }
     }
 
-    const [withDesc, total] = await Promise.all([
-      supabase
-        .from("supplier_products")
-        .select("id", { count: "exact", head: true })
-        .eq("businessId", BUSINESS_ID)
-        .eq("inOffice", true)
-        .not("whatsappDesc", "is", null),
-      supabase
-        .from("supplier_products")
-        .select("id", { count: "exact", head: true })
-        .eq("businessId", BUSINESS_ID)
-        .eq("inOffice", true),
-    ]);
+    const totalRes = await supabase
+      .from("supplier_products")
+      .select("id", { count: "exact", head: true })
+      .eq("businessId", BUSINESS_ID)
+      .eq("inOffice", true);
 
-    const done = withDesc.count ?? 0;
-    const totalCount = total.count ?? 0;
+    const totalCount = totalRes.count ?? 0;
+
+    if (regenerate) {
+      // En modo regenerar: muestra cuántos procesó en este lote y cuántos quedan por lote
+      const offset = body.offset ?? 0;
+      const nextOffset = offset + generated;
+      const remaining = totalCount - nextOffset;
+      return NextResponse.json({
+        generated,
+        errors,
+        pending: remaining,
+        done: nextOffset,
+        total: totalCount,
+        offset: nextOffset,
+        message: `${generated} regeneradas. Progreso: ${nextOffset}/${totalCount}${remaining > 0 ? ` — faltan ${remaining}` : " ✓ Todos listos"}`,
+      });
+    }
+
+    const withDescRes = await supabase
+      .from("supplier_products")
+      .select("id", { count: "exact", head: true })
+      .eq("businessId", BUSINESS_ID)
+      .eq("inOffice", true)
+      .not("whatsappDesc", "is", null);
+
+    const done = withDescRes.count ?? 0;
     const pending = totalCount - done;
 
     return NextResponse.json({
@@ -162,7 +184,7 @@ export async function POST(req: Request) {
       pending,
       done,
       total: totalCount,
-      message: `${generated} generadas. Progreso: ${done}/${totalCount}${pending > 0 ? ` — faltan ${pending}` : " ✓ Todos listos"}`,
+      message: `${generated} generadas. Progreso: ${done}/${totalCount}${pending > 0 ? ` — faltan ${pending}, presiona de nuevo` : " ✓ Todos listos"}`,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error desconocido";
