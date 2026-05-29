@@ -4,16 +4,19 @@ import { useState, useEffect } from "react";
 
 type SyncResult = {
   synced?: number;
-  created?: number;
-  updated?: number;
+  created?: number | string[];
+  updated?: number | string[];
   total?: number;
   message?: string;
   error?: string;
+  skipped?: string[];
 };
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
+  const [loadingCol, setLoadingCol] = useState(false);
+  const [resultCol, setResultCol] = useState<SyncResult | null>(null);
   const [csvUrl, setCsvUrl] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -25,6 +28,20 @@ export default function Home() {
     navigator.clipboard.writeText(csvUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleCollections() {
+    setLoadingCol(true);
+    setResultCol(null);
+    try {
+      const res = await fetch("/api/collections", { method: "POST" });
+      const data = await res.json();
+      setResultCol(data);
+    } catch {
+      setResultCol({ error: "No se pudo conectar con el servidor." });
+    } finally {
+      setLoadingCol(false);
+    }
   }
 
   async function handleSync() {
@@ -111,6 +128,50 @@ export default function Home() {
             )}
           </div>
         )}
+
+        {/* Colecciones Meta */}
+        <div className="mt-4 border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            Colecciones por marca en Meta
+          </p>
+          <button
+            onClick={handleCollections}
+            disabled={loadingCol}
+            className="w-full py-3 px-6 rounded-xl font-semibold text-white transition-all
+              bg-violet-600 hover:bg-violet-700 active:scale-95
+              disabled:bg-violet-300 disabled:cursor-not-allowed disabled:scale-100"
+          >
+            {loadingCol ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Creando colecciones...
+              </span>
+            ) : (
+              "Crear colecciones por marca"
+            )}
+          </button>
+          {resultCol && (
+            <div className={`mt-3 rounded-xl p-3 text-sm ${
+              resultCol.error
+                ? "bg-red-50 border border-red-200 text-red-700"
+                : "bg-violet-50 border border-violet-200 text-violet-800"
+            }`}>
+              {resultCol.error ? (
+                <p>❌ {resultCol.error}</p>
+              ) : (
+                <div className="space-y-1">
+                  <p className="font-semibold">✅ {resultCol.message}</p>
+                  {Array.isArray(resultCol.created) && resultCol.created.length > 0 && (
+                    <p>Nuevas: <strong>{(resultCol.created as string[]).join(", ")}</strong></p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* CSV URL para Meta */}
         <div className="mt-6 bg-gray-50 rounded-xl p-4 border border-gray-200">
