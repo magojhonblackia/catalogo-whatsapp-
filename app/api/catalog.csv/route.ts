@@ -38,7 +38,7 @@ function escapeCSV(value: string | number | boolean | null | undefined): string 
 export async function GET() {
   const { data: products, error } = await supabase
     .from("supplier_products")
-    .select("id, name, description, price, salePrice, quality, brand, category, model, isNew, inOffice, imageUrl")
+    .select("id, name, description, whatsappDesc, price, salePrice, quality, brand, category, model, isNew, inOffice, imageUrl")
     .eq("businessId", BUSINESS_ID)
     .eq("inOffice", true);
 
@@ -65,7 +65,9 @@ export async function GET() {
     const cleanBrand = stripHtml(p.brand ?? "");
     const cleanModel = stripHtml(p.model ?? "");
     const cleanCategory = stripHtml(p.category ?? "");
-    const description = p.description
+    const description = p.whatsappDesc
+      ? p.whatsappDesc
+      : p.description
       ? stripHtml(p.description)
       : [cleanBrand, cleanModel, cleanCategory].filter(Boolean).join(" — ");
 

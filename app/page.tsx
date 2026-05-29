@@ -17,6 +17,8 @@ export default function Home() {
   const [result, setResult] = useState<SyncResult | null>(null);
   const [loadingCol, setLoadingCol] = useState(false);
   const [resultCol, setResultCol] = useState<SyncResult | null>(null);
+  const [loadingDesc, setLoadingDesc] = useState(false);
+  const [resultDesc, setResultDesc] = useState<SyncResult | null>(null);
   const [csvUrl, setCsvUrl] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -41,6 +43,20 @@ export default function Home() {
       setResultCol({ error: "No se pudo conectar con el servidor." });
     } finally {
       setLoadingCol(false);
+    }
+  }
+
+  async function handleDesc() {
+    setLoadingDesc(true);
+    setResultDesc(null);
+    try {
+      const res = await fetch("/api/generate-descriptions", { method: "POST" });
+      const data = await res.json();
+      setResultDesc(data);
+    } catch {
+      setResultDesc({ error: "No se pudo conectar con el servidor." });
+    } finally {
+      setLoadingDesc(false);
     }
   }
 
@@ -128,6 +144,51 @@ export default function Home() {
             )}
           </div>
         )}
+
+        {/* Descripciones WhatsApp con DeepSeek */}
+        <div className="mt-4 border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Descripciones para WhatsApp
+          </p>
+          <p className="text-xs text-gray-400 mb-3">Genera descripciones cortas con IA (de 20 en 20)</p>
+          <button
+            onClick={handleDesc}
+            disabled={loadingDesc}
+            className="w-full py-3 px-6 rounded-xl font-semibold text-white transition-all
+              bg-orange-500 hover:bg-orange-600 active:scale-95
+              disabled:bg-orange-300 disabled:cursor-not-allowed disabled:scale-100"
+          >
+            {loadingDesc ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Generando...
+              </span>
+            ) : (
+              "Generar descripciones con IA"
+            )}
+          </button>
+          {resultDesc && (
+            <div className={`mt-3 rounded-xl p-3 text-sm ${
+              resultDesc.error
+                ? "bg-red-50 border border-red-200 text-red-700"
+                : "bg-orange-50 border border-orange-200 text-orange-800"
+            }`}>
+              {resultDesc.error ? (
+                <p>❌ {resultDesc.error}</p>
+              ) : (
+                <div className="space-y-1">
+                  <p className="font-semibold">✅ {resultDesc.message}</p>
+                  {(resultDesc as {pending?: number}).pending != null && (resultDesc as {pending?: number}).pending! > 0 && (
+                    <p className="text-xs">Presiona de nuevo para continuar con los siguientes 20.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Colecciones Meta */}
         <div className="mt-4 border-t border-gray-100 pt-4">
