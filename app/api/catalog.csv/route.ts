@@ -78,7 +78,7 @@ export async function GET() {
       escapeCSV(condition),
       escapeCSV(`${price} COP`),
       escapeCSV(""),          // link — sin tienda web
-      escapeCSV(p.imageUrl ?? ""),
+      escapeCSV(p.imageUrl ?? "https://placehold.co/800x800/e2e8f0/64748b?text=Repuesto"),
       escapeCSV(p.brand ?? ""),
       escapeCSV(p.category ?? ""),
       escapeCSV(itemGroupId),
