@@ -45,26 +45,26 @@ function groupModelsBySeries(models: string[]): Map<string, string[]> {
 
 async function getAllCollectionIds(): Promise<{ id: string; name: string }[]> {
   const results: { id: string; name: string }[] = [];
-  let url: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
-  while (url) {
-    const res = await fetch(url, { headers: AT_HEADERS });
+  let nextUrl: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
+  while (nextUrl) {
+    const res: Response = await fetch(nextUrl, { headers: AT_HEADERS });
     const json = await res.json();
     if (!res.ok) throw new Error(`Meta GET: ${JSON.stringify(json.error)}`);
     results.push(...(json.data ?? []));
-    url = json.paging?.next ?? null;
+    nextUrl = json.paging?.next ?? null;
   }
   return results;
 }
 
 async function getExistingCollections(): Promise<Record<string, string>> {
   const results: { id: string; name: string }[] = [];
-  let url: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
-  while (url) {
-    const res = await fetch(url, { headers: AT_HEADERS });
+  let nextUrl: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
+  while (nextUrl) {
+    const res: Response = await fetch(nextUrl, { headers: AT_HEADERS });
     const json = await res.json();
     if (!res.ok) throw new Error(`Meta GET collections: ${JSON.stringify(json.error)}`);
     results.push(...(json.data ?? []));
-    url = json.paging?.next ?? null;
+    nextUrl = json.paging?.next ?? null;
   }
   const map: Record<string, string> = {};
   for (const c of results) {
