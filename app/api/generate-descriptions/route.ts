@@ -138,18 +138,31 @@ export async function POST(req: Request) {
       }
     }
 
-    const remaining = await supabase
-      .from("supplier_products")
-      .select("id", { count: "exact", head: true })
-      .eq("businessId", BUSINESS_ID)
-      .eq("inOffice", true)
-      .is("whatsappDesc", null);
+    const [withDesc, total] = await Promise.all([
+      supabase
+        .from("supplier_products")
+        .select("id", { count: "exact", head: true })
+        .eq("businessId", BUSINESS_ID)
+        .eq("inOffice", true)
+        .not("whatsappDesc", "is", null),
+      supabase
+        .from("supplier_products")
+        .select("id", { count: "exact", head: true })
+        .eq("businessId", BUSINESS_ID)
+        .eq("inOffice", true),
+    ]);
+
+    const done = withDesc.count ?? 0;
+    const totalCount = total.count ?? 0;
+    const pending = totalCount - done;
 
     return NextResponse.json({
       generated,
       errors,
-      pending: remaining.count ?? 0,
-      message: `${generated} descripciones generadas. Pendientes: ${remaining.count ?? 0}`,
+      pending,
+      done,
+      total: totalCount,
+      message: `${generated} generadas. Progreso: ${done}/${totalCount}${pending > 0 ? ` — faltan ${pending}` : " ✓ Todos listos"}`,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Error desconocido";
