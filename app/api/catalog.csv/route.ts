@@ -20,7 +20,6 @@ const CSV_HEADERS = [
   "image_link",
   "brand",
   "google_product_category",
-  "item_group_id",
 ];
 
 function stripHtml(value: string): string {
@@ -70,14 +69,6 @@ export async function GET() {
       ? stripHtml(p.description)
       : [cleanBrand, cleanModel, cleanCategory].filter(Boolean).join(" — ");
 
-    // Genera item_group_id desde marca + modelo para agrupar variantes
-    const itemGroupId = [cleanBrand, cleanModel]
-      .filter(Boolean)
-      .join("-")
-      .toLowerCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "");
-
     return [
       escapeCSV(p.id),
       escapeCSV(cleanName),
@@ -89,7 +80,6 @@ export async function GET() {
       escapeCSV(p.imageUrl ?? "https://placehold.co/800x800/e2e8f0/64748b?text=Repuesto"),
       escapeCSV(cleanBrand),
       escapeCSV(cleanCategory),
-      escapeCSV(itemGroupId),
     ].join(",");
   });
 

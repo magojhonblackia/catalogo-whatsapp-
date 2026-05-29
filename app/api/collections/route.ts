@@ -31,8 +31,11 @@ async function getExistingCollections(): Promise<Record<string, string>> {
   return map;
 }
 
-async function createCollection(name: string): Promise<"created" | "duplicate" | "error"> {
-  const filter = JSON.stringify({ brand: { i_contains: name.trim() } });
+async function createCollection(name: string, brand: string, model: string): Promise<"created" | "duplicate" | "error"> {
+  const filter = JSON.stringify({
+    brand: { i_contains: brand.trim() },
+    retailer_product_group_id: { i_contains: model.trim() },
+  });
   const res = await fetch(GRAPH_URL, {
     method: "POST",
     headers: AT_HEADERS,
@@ -40,7 +43,6 @@ async function createCollection(name: string): Promise<"created" | "duplicate" |
   });
   const json = await res.json();
   if (res.ok) return "created";
-  // Error 1798073 = conjunto duplicado — ignorar
   if (json.error?.error_subcode === 1798073) return "duplicate";
   console.error(`[collections] Error creando "${name}":`, JSON.stringify(json.error));
   return "error";
@@ -48,47 +50,59 @@ async function createCollection(name: string): Promise<"created" | "duplicate" |
 
 export async function POST() {
   try {
-    // 1. Leer marcas únicas desde Supabase
+    // 1. Leer combinaciones únicas marca+modelo desde Supabase
     const { data, error } = await supabase
       .from("supplier_products")
-      .select("brand")
+      .select("brand, model")
       .eq("businessId", BUSINESS_ID)
       .eq("inOffice", true)
-      .not("brand", "is", null);
+      .not("brand", "is", null)
+      .not("model", "is", null);
 
     if (error) throw new Error(`Supabase: ${error.message}`);
 
-    const brands = [...new Set((data ?? []).map((p) => stripHtml(p.brand ?? "")).filter(Boolean))] as string[];
-    console.log("[collections] Marcas encontradas:", brands);
+    // Deduplica por brand+model
+    const seen = new Set<string>();
+    const pairs: { brand: string; model: string; name: string }[] = [];
+    for (const p of data ?? []) {
+      const brand = stripHtml(p.brand ?? "").trim();
+      const model = stripHtml(p.model ?? "").trim();
+      if (!brand || !model) continue;
+      const key = `${brand}__${model}`.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        pairs.push({ brand, model, name: `${brand} ${model}` });
+      }
+    }
+    console.log("[collections] Modelos encontrados:", pairs.length);
 
     // 2. Leer colecciones existentes en Meta
     const existing = await getExistingCollections();
-    console.log("[collections] Colecciones existentes en Meta:", Object.keys(existing));
+    console.log("[collections] Colecciones existentes:", Object.keys(existing).length);
 
     // 3. Crear todas, manejar duplicados sin fallar
     const created: string[] = [];
     const skipped: string[] = [];
     const failed: string[] = [];
 
-    for (const brand of brands) {
-      if (existing[brand.toLowerCase().trim()]) {
-        skipped.push(brand);
+    for (const { brand, model, name } of pairs) {
+      if (existing[name.toLowerCase()]) {
+        skipped.push(name);
         continue;
       }
-      const result = await createCollection(brand);
+      const result = await createCollection(name, brand, model);
       if (result === "created") {
-        created.push(brand);
-        console.log("[collections] Creada:", brand);
+        created.push(name);
+        console.log("[collections] Creada:", name);
       } else if (result === "duplicate") {
-        skipped.push(brand);
-        console.log("[collections] Duplicada (ignorada):", brand);
+        skipped.push(name);
       } else {
-        failed.push(brand);
+        failed.push(name);
       }
     }
 
     return NextResponse.json({
-      total: brands.length,
+      total: pairs.length,
       created,
       skipped,
       failed,
