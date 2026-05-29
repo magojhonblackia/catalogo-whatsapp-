@@ -14,26 +14,45 @@ function stripHtml(value: string | null | undefined): string {
   return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
 }
 
+function formatPrice(price: number): string {
+  return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(price);
+}
+
 async function generateDesc(product: {
   name: string;
   brand: string;
   model: string;
   category: string;
   quality: string;
-  description: string;
+  salePrice: number;
 }): Promise<string> {
-  const prompt = `Escribe una descripción corta y factual para este repuesto de celular.
-Máximo 2 oraciones. Sin emojis. Sin saludos. Sin tono vendedor. Solo describe qué es el repuesto y para qué sirve.
+  const prompt = `Eres un experto en redacción para tiendas de reparación de celulares en Colombia.
+Genera la descripción de este repuesto en formato WhatsApp. Sigue EXACTAMENTE esta estructura:
 
-Producto: ${product.name}
-Marca: ${product.brand}
-Modelo: ${product.model}
-Categoría: ${product.category}
-Calidad: ${product.quality}
+[emoji relacionado al tipo de repuesto] [Nombre del producto]
 
-Ejemplo del formato esperado: "Batería original para iPhone 13 Pro Max. Restaura la autonomía completa del equipo y muestra 100% de salud en ajustes."
+[1 oración que describe el repuesto y genera confianza en la calidad]
 
-Responde SOLO con la descripción, sin comillas ni explicaciones adicionales.`;
+• [Beneficio clave 1]
+• [Beneficio clave 2]
+• [Beneficio clave 3]
+• Instalación disponible
+
+💰 ${formatPrice(product.salePrice)}
+
+Datos del producto:
+- Nombre: ${product.name}
+- Marca: ${product.brand}
+- Modelo: ${product.model}
+- Categoría: ${product.category}
+- Calidad: ${product.quality}
+
+Reglas:
+- Usa tuteo informal (tú, tu equipo)
+- El emoji del título debe corresponder al tipo de repuesto (🔋 batería, 📱 pantalla/display, ⚡ carga/flex, 📷 cámara, 🔊 bocina, etc.)
+- Los bullets deben ser cortos y específicos del producto
+- No inventes características que no correspondan al repuesto
+- Responde SOLO con el texto del mensaje, sin explicaciones`;
 
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -44,7 +63,7 @@ Responde SOLO con la descripción, sin comillas ni explicaciones adicionales.`;
     body: JSON.stringify({
       model: "deepseek-chat",
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 120,
+      max_tokens: 200,
       temperature: 0.7,
     }),
   });
@@ -62,14 +81,14 @@ export async function POST(req: Request) {
     // 1. Leer productos (sin desc o todos si regenerate=true)
     let query = supabase
       .from("supplier_products")
-      .select("id, name, brand, model, category, quality, description")
+      .select("id, name, brand, model, category, quality, salePrice, price")
       .eq("businessId", BUSINESS_ID)
       .eq("inOffice", true)
       .limit(20);
 
     if (!regenerate) query = query.is("whatsappDesc", null);
 
-    const { data: products, error } = await query; // procesamos de 20 en 20 para no agotar créditos
+    const { data: products, error } = await query;
 
     if (error) throw new Error(`Supabase: ${error.message}`);
 
@@ -90,7 +109,7 @@ export async function POST(req: Request) {
           model: stripHtml(p.model),
           category: stripHtml(p.category),
           quality: stripHtml(p.quality),
-          description: stripHtml(p.description),
+          salePrice: p.salePrice ?? p.price ?? 0,
         });
 
         await supabase
@@ -102,7 +121,7 @@ export async function POST(req: Request) {
         console.log("[desc] OK:", stripHtml(p.name));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        errors.push(`${p.name}: ${msg}`);
+        errors.push(`${stripHtml(p.name)}: ${msg}`);
         console.error("[desc] Error en", p.name, msg);
       }
     }
