@@ -20,6 +20,7 @@ const CSV_HEADERS = [
   "image_link",
   "brand",
   "google_product_category",
+  "custom_label_0",
 ];
 
 function stripHtml(value: string): string {
@@ -82,6 +83,7 @@ export async function GET() {
       escapeCSV(p.imageUrl ?? "https://placehold.co/800x800/e2e8f0/64748b?text=Repuesto"),
       escapeCSV(cleanBrand),
       escapeCSV(cleanCategory),
+      escapeCSV(cleanModel),   // custom_label_0 = modelo para filtrar conjuntos
     ].join(",");
   });
 

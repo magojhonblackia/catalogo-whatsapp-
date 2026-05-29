@@ -34,7 +34,7 @@ async function getExistingCollections(): Promise<Record<string, string>> {
 async function createCollection(name: string, brand: string, model: string): Promise<"created" | "duplicate" | "error"> {
   const filter = JSON.stringify({
     brand: { i_contains: brand.trim() },
-    retailer_product_group_id: { i_contains: model.trim() },
+    custom_label_0: { i_contains: model.trim() },
   });
   const res = await fetch(GRAPH_URL, {
     method: "POST",
