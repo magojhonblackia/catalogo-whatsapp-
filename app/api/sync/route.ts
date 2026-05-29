@@ -6,6 +6,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+function stripHtml(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
+}
+
 const AIRTABLE_TOKEN = process.env.AIRTABLE_API_KEY!;
 const BASE_ID = process.env.AIRTABLE_BASE_ID!;
 const TABLE = encodeURIComponent(process.env.AIRTABLE_TABLE_NAME!);
@@ -96,14 +101,14 @@ export async function POST() {
     for (const p of products) {
       const fields: Record<string, unknown> = {
         supplier_id: p.id,
-        Nombre: p.name ?? "",
-        Descripcion: p.description ?? "",
+        Nombre: stripHtml(p.name),
+        Descripcion: stripHtml(p.description),
         Precio: p.price ?? 0,
         PrecioVenta: p.salePrice ?? 0,
-        Calidad: p.quality ?? "",
-        Marca: p.brand ?? "",
-        Categoria: p.category ?? "",
-        Modelo: p.model ?? "",
+        Calidad: stripHtml(p.quality),
+        Marca: stripHtml(p.brand),
+        Categoria: stripHtml(p.category),
+        Modelo: stripHtml(p.model),
         EsNuevo: p.isNew ?? false,
         EnOficina: p.inOffice ?? false,
       };
