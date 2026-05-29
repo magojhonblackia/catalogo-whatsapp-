@@ -20,6 +20,7 @@ const CSV_HEADERS = [
   "image_link",
   "brand",
   "google_product_category",
+  "item_group_id",
 ];
 
 function escapeCSV(value: string | number | boolean | null | undefined): string {
@@ -61,6 +62,14 @@ export async function GET() {
       ? p.description
       : [p.brand, p.model, p.category].filter(Boolean).join(" — ");
 
+    // Genera item_group_id desde marca + modelo para agrupar variantes
+    const itemGroupId = [p.brand, p.model]
+      .filter(Boolean)
+      .join("-")
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+
     return [
       escapeCSV(p.id),
       escapeCSV(p.name),
@@ -68,10 +77,11 @@ export async function GET() {
       escapeCSV("in stock"),
       escapeCSV(condition),
       escapeCSV(`${price} COP`),
-      escapeCSV(""),          // link — sin tienda web se deja vacío
+      escapeCSV(""),
       escapeCSV(p.imageUrl ?? ""),
       escapeCSV(p.brand ?? ""),
       escapeCSV(p.category ?? ""),
+      escapeCSV(itemGroupId),
     ].join(",");
   });
 
