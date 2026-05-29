@@ -11,8 +11,13 @@ const META_TOKEN = process.env.META_ACCESS_TOKEN!;
 const CATALOG_ID = process.env.META_CATALOG_ID!;
 const GRAPH_URL = `https://graph.facebook.com/v19.0/${CATALOG_ID}/product_sets`;
 
+const AT_HEADERS = {
+  Authorization: `Bearer ${META_TOKEN}`,
+  "Content-Type": "application/json",
+};
+
 async function getExistingCollections(): Promise<Record<string, string>> {
-  const res = await fetch(`${GRAPH_URL}?access_token=${META_TOKEN}&fields=id,name&limit=100`);
+  const res = await fetch(`${GRAPH_URL}?fields=id,name&limit=100`, { headers: AT_HEADERS });
   const json = await res.json();
   if (!res.ok) throw new Error(`Meta GET collections: ${JSON.stringify(json.error)}`);
   const map: Record<string, string> = {};
@@ -24,12 +29,11 @@ async function getExistingCollections(): Promise<Record<string, string>> {
 
 async function createCollection(name: string): Promise<string> {
   const filter = JSON.stringify({ brand: { i_contains: name } });
-  const body = new URLSearchParams({
-    name,
-    filter,
-    access_token: META_TOKEN,
+  const res = await fetch(GRAPH_URL, {
+    method: "POST",
+    headers: AT_HEADERS,
+    body: JSON.stringify({ name, filter }),
   });
-  const res = await fetch(GRAPH_URL, { method: "POST", body });
   const json = await res.json();
   if (!res.ok) throw new Error(`Meta POST collection "${name}": ${JSON.stringify(json.error)}`);
   return json.id;
