@@ -46,11 +46,15 @@ export default function Home() {
     }
   }
 
-  async function handleDesc() {
+  async function handleDesc(regenerate = false) {
     setLoadingDesc(true);
     setResultDesc(null);
     try {
-      const res = await fetch("/api/generate-descriptions", { method: "POST" });
+      const res = await fetch("/api/generate-descriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regenerate }),
+      });
       const data = await res.json();
       setResultDesc(data);
     } catch {
@@ -151,10 +155,11 @@ export default function Home() {
             Descripciones para WhatsApp
           </p>
           <p className="text-xs text-gray-400 mb-3">Genera descripciones cortas con IA (de 20 en 20)</p>
+          <div className="flex gap-2">
           <button
-            onClick={handleDesc}
+            onClick={() => handleDesc(false)}
             disabled={loadingDesc}
-            className="w-full py-3 px-6 rounded-xl font-semibold text-white transition-all
+            className="flex-1 py-3 px-4 rounded-xl font-semibold text-white transition-all
               bg-orange-500 hover:bg-orange-600 active:scale-95
               disabled:bg-orange-300 disabled:cursor-not-allowed disabled:scale-100"
           >
@@ -167,9 +172,20 @@ export default function Home() {
                 Generando...
               </span>
             ) : (
-              "Generar descripciones con IA"
+              "Generar pendientes"
             )}
           </button>
+          <button
+            onClick={() => handleDesc(true)}
+            disabled={loadingDesc}
+            title="Regenera todos (sobreescribe existentes)"
+            className="py-3 px-4 rounded-xl font-semibold text-orange-600 border border-orange-300
+              bg-white hover:bg-orange-50 transition-all active:scale-95
+              disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ↺
+          </button>
+          </div>
           {resultDesc && (
             <div className={`mt-3 rounded-xl p-3 text-sm ${
               resultDesc.error

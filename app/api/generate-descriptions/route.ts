@@ -22,17 +22,18 @@ async function generateDesc(product: {
   quality: string;
   description: string;
 }): Promise<string> {
-  const prompt = `Eres un asistente de ventas para una tienda de reparación de celulares.
-Genera una descripción corta (máximo 2 oraciones, tono amigable y directo) para este repuesto que será enviada por WhatsApp al cliente cuando pregunte por el producto.
+  const prompt = `Escribe una descripción corta y factual para este repuesto de celular.
+Máximo 2 oraciones. Sin emojis. Sin saludos. Sin tono vendedor. Solo describe qué es el repuesto y para qué sirve.
 
 Producto: ${product.name}
 Marca: ${product.brand}
 Modelo: ${product.model}
 Categoría: ${product.category}
 Calidad: ${product.quality}
-Descripción original (solo como referencia): ${product.description}
 
-Responde SOLO con la descripción, sin comillas ni explicaciones.`;
+Ejemplo del formato esperado: "Batería original para iPhone 13 Pro Max. Restaura la autonomía completa del equipo y muestra 100% de salud en ajustes."
+
+Responde SOLO con la descripción, sin comillas ni explicaciones adicionales.`;
 
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -53,16 +54,22 @@ Responde SOLO con la descripción, sin comillas ni explicaciones.`;
   return json.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
-    // 1. Leer productos sin whatsappDesc
-    const { data: products, error } = await supabase
+    const body = await req.json().catch(() => ({}));
+    const regenerate = body.regenerate === true;
+
+    // 1. Leer productos (sin desc o todos si regenerate=true)
+    let query = supabase
       .from("supplier_products")
       .select("id, name, brand, model, category, quality, description")
       .eq("businessId", BUSINESS_ID)
-      .is("whatsappDesc", null)
       .eq("inOffice", true)
-      .limit(20); // procesamos de 20 en 20 para no agotar créditos
+      .limit(20);
+
+    if (!regenerate) query = query.is("whatsappDesc", null);
+
+    const { data: products, error } = await query; // procesamos de 20 en 20 para no agotar créditos
 
     if (error) throw new Error(`Supabase: ${error.message}`);
 
