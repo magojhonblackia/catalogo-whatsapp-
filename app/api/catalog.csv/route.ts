@@ -23,9 +23,13 @@ const CSV_HEADERS = [
   "item_group_id",
 ];
 
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
+}
+
 function escapeCSV(value: string | number | boolean | null | undefined): string {
   if (value === null || value === undefined) return "";
-  const str = String(value);
+  const str = typeof value === "string" ? stripHtml(String(value)) : String(value);
   if (str.includes(",") || str.includes('"') || str.includes("\n")) {
     return `"${str.replace(/"/g, '""')}"`;
   }
