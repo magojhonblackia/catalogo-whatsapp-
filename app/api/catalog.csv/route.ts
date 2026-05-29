@@ -23,8 +23,30 @@ const CSV_HEADERS = [
   "custom_label_0",
 ];
 
+const SITE_URL = process.env.SITE_URL ?? "https://jcreparaciones.com";
+
 function stripHtml(value: string): string {
   return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
+}
+
+// Replicates the slug() used by jcreparaciones.com to build SSR URLs
+function slug(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")   // strip accents
+    .replace(/[^a-z0-9\s-]/g, "")      // keep only alphanumeric + spaces + hyphens
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function buildProductUrl(brand: string, model: string, category: string): string {
+  if (!brand || !model || !category) return "";
+  const modelSlug = slug(model);
+  const marcaParam = modelSlug.split("-")[0]; // e.g. "iphone" from "iphone-15-pro"
+  const servicioParam = `${slug(brand)}-${modelSlug}-${slug(category)}`;
+  return `${SITE_URL}/reparacion/${marcaParam}/${modelSlug}/${servicioParam}`;
 }
 
 function escapeCSV(value: string | number | boolean | null | undefined): string {
@@ -72,6 +94,8 @@ export async function GET() {
       ? stripHtml(p.description)
       : [cleanBrand, cleanModel, cleanCategory].filter(Boolean).join(" — ");
 
+    const productUrl = buildProductUrl(cleanBrand, cleanModel, cleanCategory);
+
     return [
       escapeCSV(p.id),
       escapeCSV(cleanName),
@@ -79,7 +103,7 @@ export async function GET() {
       escapeCSV("in stock"),
       escapeCSV(condition),
       escapeCSV(`${price} COP`),
-      escapeCSV(""),          // link — sin tienda web
+      escapeCSV(productUrl),
       escapeCSV(p.imageUrl ?? "https://placehold.co/800x800/e2e8f0/64748b?text=Repuesto"),
       escapeCSV(cleanBrand),
       escapeCSV(cleanCategory),
