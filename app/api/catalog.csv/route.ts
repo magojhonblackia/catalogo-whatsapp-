@@ -62,12 +62,16 @@ export async function GET() {
     .map((p) => {
     const price = p.salePrice;
     const condition = p.isNew ? "new" : "used";
+    const cleanName = stripHtml(p.name ?? "");
+    const cleanBrand = stripHtml(p.brand ?? "");
+    const cleanModel = stripHtml(p.model ?? "");
+    const cleanCategory = stripHtml(p.category ?? "");
     const description = p.description
-      ? p.description
-      : [p.brand, p.model, p.category].filter(Boolean).join(" — ");
+      ? stripHtml(p.description)
+      : [cleanBrand, cleanModel, cleanCategory].filter(Boolean).join(" — ");
 
     // Genera item_group_id desde marca + modelo para agrupar variantes
-    const itemGroupId = [p.brand, p.model]
+    const itemGroupId = [cleanBrand, cleanModel]
       .filter(Boolean)
       .join("-")
       .toLowerCase()
@@ -76,15 +80,15 @@ export async function GET() {
 
     return [
       escapeCSV(p.id),
-      escapeCSV(p.name),
-      escapeCSV(description || p.name),
+      escapeCSV(cleanName),
+      escapeCSV(description || cleanName),
       escapeCSV("in stock"),
       escapeCSV(condition),
       escapeCSV(`${price} COP`),
       escapeCSV(""),          // link — sin tienda web
       escapeCSV(p.imageUrl ?? "https://placehold.co/800x800/e2e8f0/64748b?text=Repuesto"),
-      escapeCSV(p.brand ?? ""),
-      escapeCSV(p.category ?? ""),
+      escapeCSV(cleanBrand),
+      escapeCSV(cleanCategory),
       escapeCSV(itemGroupId),
     ].join(",");
   });

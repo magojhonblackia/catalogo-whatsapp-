@@ -7,6 +7,10 @@ const supabase = createClient(
 );
 
 const BUSINESS_ID = process.env.BUSINESS_ID!;
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
+}
 const META_TOKEN = process.env.META_ACCESS_TOKEN!;
 const CATALOG_ID = process.env.META_CATALOG_ID!;
 const GRAPH_URL = `https://graph.facebook.com/v19.0/${CATALOG_ID}/product_sets`;
@@ -54,7 +58,7 @@ export async function POST() {
 
     if (error) throw new Error(`Supabase: ${error.message}`);
 
-    const brands = [...new Set((data ?? []).map((p) => p.brand).filter(Boolean))] as string[];
+    const brands = [...new Set((data ?? []).map((p) => stripHtml(p.brand ?? "")).filter(Boolean))] as string[];
     console.log("[collections] Marcas encontradas:", brands);
 
     // 2. Leer colecciones existentes en Meta
