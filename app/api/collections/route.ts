@@ -13,17 +13,20 @@ function stripHtml(value: string): string {
 }
 
 const META_TOKEN = process.env.META_ACCESS_TOKEN!;
-const CATALOG_ID = process.env.META_CATALOG_ID!;
-const GRAPH_URL = `https://graph.facebook.com/v19.0/${CATALOG_ID}/product_sets`;
+const DEFAULT_CATALOG_ID = process.env.META_CATALOG_ID!;
 
 const AT_HEADERS = {
   Authorization: `Bearer ${META_TOKEN}`,
   "Content-Type": "application/json",
 };
 
-async function fetchAllSets(): Promise<{ id: string; name: string }[]> {
+function graphUrl(catalogId: string) {
+  return `https://graph.facebook.com/v22.0/${catalogId}/product_sets`;
+}
+
+async function fetchAllSets(catalogId: string): Promise<{ id: string; name: string }[]> {
   const results: { id: string; name: string }[] = [];
-  let nextUrl: string | null = `${GRAPH_URL}?fields=id,name&limit=100`;
+  let nextUrl: string | null = `${graphUrl(catalogId)}?fields=id,name&limit=100`;
   while (nextUrl) {
     const res: Response = await fetch(nextUrl, { headers: AT_HEADERS });
     const json = await res.json();
@@ -35,10 +38,11 @@ async function fetchAllSets(): Promise<{ id: string; name: string }[]> {
 }
 
 async function createSet(
+  catalogId: string,
   name: string,
   filter: string
 ): Promise<{ id: string } | "duplicate" | "error"> {
-  const res: Response = await fetch(GRAPH_URL, {
+  const res: Response = await fetch(graphUrl(catalogId), {
     method: "POST",
     headers: AT_HEADERS,
     body: JSON.stringify({ name: name.trim(), filter }),
@@ -51,7 +55,9 @@ async function createSet(
   return "error";
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => ({}));
+  const catalogId: string = body.catalogId || DEFAULT_CATALOG_ID;
   try {
     // 1. Leer marcas únicas desde Supabase
     const { data, error } = await supabase
@@ -74,7 +80,7 @@ export async function POST() {
     console.log("[collections] Marcas encontradas:", brands.size);
 
     // 2. Leer colecciones existentes en Meta
-    const existing = await fetchAllSets();
+    const existing = await fetchAllSets(catalogId);
     const existingByName = new Map<string, string>();
     for (const s of existing) existingByName.set(s.name.toLowerCase(), s.id);
 
@@ -92,7 +98,7 @@ export async function POST() {
       }
 
       const filter = JSON.stringify({ brand: { eq: brandRaw.trim() } });
-      const result = await createSet(brandRaw, filter);
+      const result = await createSet(catalogId, brandRaw, filter);
 
       if (typeof result === "object" && result.id) {
         created.push(brandRaw);
@@ -118,16 +124,18 @@ export async function POST() {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  const body = await request.json().catch(() => ({}));
+  const catalogId: string = body.catalogId || DEFAULT_CATALOG_ID;
   try {
-    const collections = await fetchAllSets();
+    const collections = await fetchAllSets(catalogId);
     console.log("[collections] Eliminando", collections.length, "conjuntos...");
 
     let deleted = 0;
     const failed: string[] = [];
 
     for (const { id, name } of collections) {
-      const res: Response = await fetch(`https://graph.facebook.com/v19.0/${id}`, {
+      const res: Response = await fetch(`https://graph.facebook.com/v22.0/${id}`, {
         method: "DELETE",
         headers: AT_HEADERS,
       });

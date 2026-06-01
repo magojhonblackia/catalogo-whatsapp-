@@ -17,6 +17,7 @@ export default function Home() {
   const [result, setResult] = useState<SyncResult | null>(null);
   const [loadingCol, setLoadingCol] = useState(false);
   const [resultCol, setResultCol] = useState<SyncResult | null>(null);
+  const [catalogId, setCatalogId] = useState("");
   const [loadingDel, setLoadingDel] = useState(false);
   const [loadingDesc, setLoadingDesc] = useState(false);
   const [resultDesc, setResultDesc] = useState<SyncResult | null>(null);
@@ -37,7 +38,11 @@ export default function Home() {
     if (!confirm("¿Eliminar todos los conjuntos de Meta?")) return;
     setLoadingDel(true);
     try {
-      const res = await fetch("/api/collections", { method: "DELETE" });
+      const res = await fetch("/api/collections", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ catalogId: catalogId.trim() || undefined }),
+      });
       const data = await res.json();
       setResultCol(data);
     } catch {
@@ -51,7 +56,11 @@ export default function Home() {
     setLoadingCol(true);
     setResultCol(null);
     try {
-      const res = await fetch("/api/collections", { method: "POST" });
+      const res = await fetch("/api/collections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ catalogId: catalogId.trim() || undefined }),
+      });
       const data = await res.json();
       setResultCol(data);
     } catch {
@@ -228,10 +237,21 @@ export default function Home() {
 
         {/* Colecciones Meta */}
         <div className="mt-4 border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Colecciones por modelo en Meta
+          </p>
+          <div className="mb-3">
+            <label className="text-xs text-gray-500 mb-1 block">ID de catálogo (opcional)</label>
+            <input
+              type="text"
+              value={catalogId}
+              onChange={(e) => setCatalogId(e.target.value)}
+              placeholder="Ej: 27022114080791679 (vacío = usa el del .env)"
+              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-300"
+            />
+          </div>
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Colecciones por modelo en Meta
-            </p>
+            <span />
             <button
               onClick={handleDeleteCollections}
               disabled={loadingDel || loadingCol}
