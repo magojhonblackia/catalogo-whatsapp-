@@ -12,23 +12,22 @@ function stripHtml(value: string): string {
   return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
 }
 
-const META_TOKEN = process.env.META_ACCESS_TOKEN!;
+const DEFAULT_TOKEN = process.env.META_ACCESS_TOKEN!;
 const DEFAULT_CATALOG_ID = process.env.META_CATALOG_ID!;
 
-const AT_HEADERS = {
-  Authorization: `Bearer ${META_TOKEN}`,
-  "Content-Type": "application/json",
-};
+function authHeaders(token: string) {
+  return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+}
 
 function graphUrl(catalogId: string) {
   return `https://graph.facebook.com/v22.0/${catalogId}/product_sets`;
 }
 
-async function fetchAllSets(catalogId: string): Promise<{ id: string; name: string }[]> {
+async function fetchAllSets(catalogId: string, token: string): Promise<{ id: string; name: string }[]> {
   const results: { id: string; name: string }[] = [];
   let nextUrl: string | null = `${graphUrl(catalogId)}?fields=id,name&limit=100`;
   while (nextUrl) {
-    const res: Response = await fetch(nextUrl, { headers: AT_HEADERS });
+    const res: Response = await fetch(nextUrl, { headers: authHeaders(token) });
     const json = await res.json();
     if (!res.ok) throw new Error(`Meta GET: ${JSON.stringify(json.error)}`);
     results.push(...(json.data ?? []));
@@ -39,12 +38,13 @@ async function fetchAllSets(catalogId: string): Promise<{ id: string; name: stri
 
 async function createSet(
   catalogId: string,
+  token: string,
   name: string,
   filter: string
 ): Promise<{ id: string } | "duplicate" | "error"> {
   const res: Response = await fetch(graphUrl(catalogId), {
     method: "POST",
-    headers: AT_HEADERS,
+    headers: authHeaders(token),
     body: JSON.stringify({ name: name.trim(), filter }),
   });
   const json = await res.json();
@@ -58,6 +58,7 @@ async function createSet(
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const catalogId: string = body.catalogId || DEFAULT_CATALOG_ID;
+  const token: string = body.metaToken || DEFAULT_TOKEN;
   try {
     // 1. Leer marcas únicas desde Supabase
     const { data, error } = await supabase
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
     console.log("[collections] Marcas encontradas:", brands.size);
 
     // 2. Leer colecciones existentes en Meta
-    const existing = await fetchAllSets(catalogId);
+    const existing = await fetchAllSets(catalogId, token);
     const existingByName = new Map<string, string>();
     for (const s of existing) existingByName.set(s.name.toLowerCase(), s.id);
 
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
       }
 
       const filter = JSON.stringify({ brand: { eq: brandRaw.trim() } });
-      const result = await createSet(catalogId, brandRaw, filter);
+      const result = await createSet(catalogId, token, brandRaw, filter);
 
       if (typeof result === "object" && result.id) {
         created.push(brandRaw);
@@ -127,8 +128,9 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const body = await request.json().catch(() => ({}));
   const catalogId: string = body.catalogId || DEFAULT_CATALOG_ID;
+  const token: string = body.metaToken || DEFAULT_TOKEN;
   try {
-    const collections = await fetchAllSets(catalogId);
+    const collections = await fetchAllSets(catalogId, token);
     console.log("[collections] Eliminando", collections.length, "conjuntos...");
 
     let deleted = 0;
@@ -137,7 +139,7 @@ export async function DELETE(request: Request) {
     for (const { id, name } of collections) {
       const res: Response = await fetch(`https://graph.facebook.com/v22.0/${id}`, {
         method: "DELETE",
-        headers: AT_HEADERS,
+        headers: authHeaders(token),
       });
       const json = await res.json();
       if (res.ok && json.success) {

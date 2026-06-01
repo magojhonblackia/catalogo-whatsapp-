@@ -18,6 +18,7 @@ export default function Home() {
   const [loadingCol, setLoadingCol] = useState(false);
   const [resultCol, setResultCol] = useState<SyncResult | null>(null);
   const [catalogId, setCatalogId] = useState("");
+  const [metaToken, setMetaToken] = useState("");
   const [loadingDel, setLoadingDel] = useState(false);
   const [loadingDesc, setLoadingDesc] = useState(false);
   const [resultDesc, setResultDesc] = useState<SyncResult | null>(null);
@@ -41,7 +42,7 @@ export default function Home() {
       const res = await fetch("/api/collections", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ catalogId: catalogId.trim() || undefined }),
+        body: JSON.stringify({ catalogId: catalogId.trim() || undefined, metaToken: metaToken.trim() || undefined }),
       });
       const data = await res.json();
       setResultCol(data);
@@ -59,7 +60,7 @@ export default function Home() {
       const res = await fetch("/api/collections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ catalogId: catalogId.trim() || undefined }),
+        body: JSON.stringify({ catalogId: catalogId.trim() || undefined, metaToken: metaToken.trim() || undefined }),
       });
       const data = await res.json();
       setResultCol(data);
@@ -240,6 +241,16 @@ export default function Home() {
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
             Colecciones por modelo en Meta
           </p>
+          <div className="mb-2">
+            <label className="text-xs text-gray-500 mb-1 block">Token de Meta (opcional)</label>
+            <input
+              type="password"
+              value={metaToken}
+              onChange={(e) => setMetaToken(e.target.value)}
+              placeholder="EAAxxxxxxxxx (vacío = usa el del .env)"
+              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-300"
+            />
+          </div>
           <div className="mb-3">
             <label className="text-xs text-gray-500 mb-1 block">ID de catálogo (opcional)</label>
             <input
