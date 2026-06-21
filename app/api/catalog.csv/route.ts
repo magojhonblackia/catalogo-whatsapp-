@@ -84,7 +84,7 @@ export async function GET() {
         escapeCSV(p.site_url ?? ""),
         escapeCSV(p.imageUrl ?? "https://placehold.co/800x800/e2e8f0/64748b?text=Repuesto"),
         escapeCSV(cleanBrand),
-        escapeCSV(cleanCategory),
+        escapeCSV(cleanBrand),
         escapeCSV(cleanModel),
       ].join(",");
     });
