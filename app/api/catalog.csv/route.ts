@@ -40,7 +40,10 @@ export async function GET() {
     .from("supplier_products")
     .select("id, name, description, whatsappDesc, price, salePrice, quality, brand, category, model, isNew, inOffice, imageUrl, site_url")
     .eq("businessId", BUSINESS_ID)
-    .eq("inOffice", true);
+    .eq("inOffice", true)
+    .order("brand", { ascending: true })
+    .order("model", { ascending: true })
+    .order("category", { ascending: true });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
